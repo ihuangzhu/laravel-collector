@@ -12,7 +12,7 @@ class Game extends Model
      * @var array
      */
     protected $fillable = [
-        'channel', 'sign', 'name', 'sub_name', 'start_at', 'end_at', 'status',
+        'mode_id', 'channel', 'sign', 'name', 'sub_name', 'start_at', 'end_at', 'status',
     ];
 
     /**
@@ -21,5 +21,13 @@ class Game extends Model
     public function rule()
     {
         return $this->hasOne(GameRule::class);
+    }
+
+    /**
+     * Get the mode that owns the game.
+     */
+    public function mode()
+    {
+        return $this->belongsTo(GameMode::class);
     }
 }

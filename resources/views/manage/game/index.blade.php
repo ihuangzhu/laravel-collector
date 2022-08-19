@@ -19,14 +19,14 @@
             @foreach($games as $game)
                 <tr>
                     <td>{{ $game->id }}</td>
-                    <td>{{ $game->channel->name }}</td>
+                    <td>{{ \App\Enums\Channel::getMap($game->channel, '-') }}</td>
                     <td>{{ $game->name }}</td>
                     <td>{{ $game->sub_name }}</td>
                     <td>{{ $game->start_at }}</td>
                     <td>{{ $game->end_at }}</td>
-                    <td>{{ \App\Enums\GameStatus::getMap($game->status) }}</td>
+                    <td>{{ \App\Enums\GameStatus::getMap($game->status, '-') }}</td>
                     <td>
-                        <a href="{{ url('/manage/game/edit', ['id' => $game->id]) }}">编辑</a>
+                        <a href="{{ url('/admin/game/edit', ['id' => $game->id]) }}">编辑</a>
                     </td>
                 </tr>
             @endforeach

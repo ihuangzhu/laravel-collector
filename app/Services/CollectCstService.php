@@ -6,6 +6,7 @@ namespace App\Services;
 
 use App\Enums\GameStatus;
 use App\Helpers\CstHelper;
+use App\Jobs\ScanSubscriber;
 use App\Models\Game;
 use App\Models\GameMatch;
 use Carbon\Carbon;
@@ -20,13 +21,61 @@ class CollectCstService
     private $ext;
 
     /**
+     * @var string
+     */
+    private $start;
+
+    /**
+     * @var string
+     */
+    private $end;
+
+    /**
+     * @var int
+     */
+    private $status = GameStatus::PREPARE;
+
+    /**
      * 更新比赛
+     *
+     * @param Game $game
+     * @throws GuzzleException
+     */
+    public function refresh(Game $game)
+    {
+        if ($this->refreshGameMatch($game)) {
+            $this->refreshGame($game);
+        }
+    }
+
+    /**
+     * 更新比赛
+     *
+     * @param Game $game
+     * @return bool
+     */
+    public function refreshGame(Game $game)
+    {
+        if ($this->start) $game->start_at = $this->start;
+        if ($this->end) $game->end_at = $this->end;
+        if ($this->start && now()->gte(Carbon::createFromFormat('Y-m-d H:i:s', $this->start))) {
+            $game->status = GameStatus::START;
+        }
+        if ($this->end && now()->gte(Carbon::createFromFormat('Y-m-d H:i:s', $this->end))) {
+            $game->status = GameStatus::END;
+        }
+        $game->setUpdatedAt(now());
+        return $game->update();
+    }
+
+    /**
+     * 更新比赛排表
      *
      * @param Game $game
      * @return bool
      * @throws GuzzleException
      */
-    public function refresh(Game $game)
+    public function refreshGameMatch(Game $game)
     {
         if (!$game->rule->exists) return false;
         if ($mapping = json_decode($game->rule->mapping, true) ?: []) {
@@ -35,7 +84,7 @@ class CollectCstService
             }
 
             if ($mapping['matches'] ?? false) {
-                $this->collectMatch($game, $mapping['matches']);
+                $this->collectGameMatch($game, $mapping['matches']);
             }
 
             return true;
@@ -72,7 +121,7 @@ class CollectCstService
      * @return bool
      * @throws GuzzleException
      */
-    public function collectMatch(Game $game, array $rule)
+    public function collectGameMatch(Game $game, array $rule)
     {
         if (empty($rule['url'])) return false;
         if ($result = CstHelper::get($rule['url']['action'], $rule['url']['data'] ?? [])) {
@@ -80,21 +129,30 @@ class CollectCstService
             foreach ($list as $value) {
                 if ($this->match($mapping, $value, $matches) === false) continue;
 
+                $this->start = empty($this->start) ? $matches['start_at'] :  min($this->start, $matches['start_at']);
+                $this->end = empty($this->end) ? $matches['start_at'] : max($this->end, $matches['start_at']);
+
+                $teamA = $matches['team_a'] ?? 'A';
+                $teamB = $matches['team_b'] ?? 'B';
                 $scoreA = $matches['score_a'] ?? 0;
                 $scoreB = $matches['score_b'] ?? 0;
+
                 if ($gameMatch = GameMatch::query()->where(['game_id' => $game->id, 'sign' => $matches['sign']])->first()) { // 编辑
                     if ($gameMatch->status == GameStatus::END) continue;
 
+                    $gameMatch->name = "{$teamA} vs {$teamB}";
                     $gameMatch->score = "{$scoreA}:{$scoreB}";
+                    $gameMatch->status = $matches['status'];
+                    $gameMatch->team_a = $teamA;
+                    $gameMatch->team_b = $teamB;
                     $gameMatch->score_a = $scoreA;
                     $gameMatch->score_b = $scoreB;
-                    $gameMatch->status = $matches['status'];
                     $gameMatch->start_at = $matches['start_at'];
                     $gameMatch->update();
-                } else { // 新增
-                    $teamA = $matches['team_a'] ?? 'A';
-                    $teamB = $matches['team_b'] ?? 'B';
 
+                    // 比赛结束执行回调
+                    if ($gameMatch->status == GameStatus::END) ScanSubscriber::dispatch($gameMatch)->onQueue('scan');
+                } else { // 新增
                     $gameMatch = new GameMatch();
                     $gameMatch->fill([
                         'game_id' => $game->id,
@@ -144,6 +202,20 @@ class CollectCstService
                     break;
                 default:
                     $matches[$mapping['mapping']] = $subjects[$mapping['key']];
+                    if ($map = $mapping['map'] ?? false) {
+                        if (isset($map[$subjects[$mapping['key']]])) {
+                            $matches[$mapping['mapping']] = $map[$subjects[$mapping['key']]];
+                        }
+                    }
+                    if ($pattern = $mapping['pattern'] ?? false) {
+                        if (preg_match($pattern, $subjects[$mapping['key']], $arr) !== false) {
+                            $matches[$mapping['mapping']] = head($arr);
+                        }
+                    }
+                    if (empty($matches[$mapping['mapping']]) && isset($mapping['default'])) {
+                        $matches[$mapping['mapping']] = $mapping['default'];
+                    }
+
                     break;
             }
         }
@@ -162,16 +234,16 @@ class CollectCstService
     {
         foreach ($mappings as $mapping) {
             if ($mapping['type'] == 'array') {
-                if ($target = $mapping['target'] ?? false) {
-                    return [
-                        $subjects[$mapping['key']] ?? [],
-                        $mapping['children'] ?? [],
-                    ];
-                }
+                if ($target = $mapping['target'] ?? false) return [
+                    $subjects[$mapping['key']] ?? [],
+                    $mapping['children'] ?? [],
+                ];
 
                 foreach ($subjects[$mapping['key']] ?? [] as $value) {
                     return $this->matchList($value, $mapping['children'] ?? []);
                 }
+            } elseif ($mapping['type'] == 'object') {
+                return $this->matchList($subjects[$mapping['key']] ?? [], [$mapping['child']]);
             }
         }
 

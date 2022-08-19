@@ -6,9 +6,9 @@ namespace App\Services;
 
 use App\Enums\GameStatus;
 use App\Helpers\CctvHelper;
+use App\Jobs\ScanSubscriber;
 use App\Models\Game;
 use App\Models\GameMatch;
-use App\Models\GameMatchRound;
 use GuzzleHttp\Exception\GuzzleException;
 use Illuminate\Support\Facades\Log;
 
@@ -52,7 +52,7 @@ class CollectCctvService
             $game->end_at = $lastDay['date'];
             $game->status = $status;
             $game->setUpdatedAt(now());
-            return $game->save();
+            return $game->update();
         }
 
         Log::warning('Fail to get the game dates', [
@@ -79,66 +79,41 @@ class CollectCctvService
         // 同步比赛安排列表
         foreach ($matchList['results'] ?? [] as $matchDay) {
             foreach ($matchDay['list'] ?? [] as $matchItem) {
-                $matchScoreA = $matchItem['homeScore'] ?? 0;
-                $matchScoreB = $matchItem['guestScore'] ?? 0;
+                $teamA = $matchItem['homeName'] ?? 'A';
+                $teamB = $matchItem['guestName'] ?? 'B';
+                $scoreA = $matchItem['homeScore'] ?? 0;
+                $scoreB = $matchItem['guestScore'] ?? 0;
 
-                /*
-                 * 1）比赛
-                 */
+                // 比赛数据
                 if ($gameMatch = GameMatch::query()->where(['game_id' => $game->id, 'sign' => $matchItem['id']])->first()) { // 更新
                     if ($gameMatch->status == GameStatus::END) continue;
 
-                    $gameMatch->score = "{$matchScoreA}:{$matchScoreB}";
+                    $gameMatch->name = "{$teamA} vs {$teamB}";
+                    $gameMatch->score = "{$scoreA}:{$scoreB}";
                     $gameMatch->status = $matchItem['gameStatus'];
-                    $gameMatch->score_a = $matchScoreA;
-                    $gameMatch->score_b = $matchScoreB;
+                    $gameMatch->team_a = $teamA;
+                    $gameMatch->team_b = $teamB;
+                    $gameMatch->score_a = $scoreA;
+                    $gameMatch->score_b = $scoreB;
+                    $gameMatch->start_at = $matchItem['startTime'];
                     $gameMatch->update();
-                } else { // 新增
-                    $teamA = $matchItem['homeName'] ?? 'A';
-                    $teamB = $matchItem['guestName'] ?? 'B';
 
+                    // 比赛结束执行回调
+                    if ($gameMatch->status == GameStatus::END) ScanSubscriber::dispatch($gameMatch)->onQueue('scan');
+                } else { // 新增
                     $gameMatch = new GameMatch();
                     $gameMatch->fill([
                         'game_id' => $game->id,
                         'sign' => $matchItem['id'],
                         'name' => "{$teamA} vs {$teamB}",
-                        'score' => "{$matchScoreA}:{$matchScoreB}",
+                        'score' => "{$scoreA}:{$scoreB}",
                         'status' => $matchItem['gameStatus'],
-                        'team_a' => $matchItem['homeName'],
-                        'team_b' => $matchItem['guestName'],
-                        'score_a' => $matchScoreA,
-                        'score_b' => $matchScoreB,
+                        'team_a' => $teamA,
+                        'team_b' => $teamB,
+                        'score_a' => $scoreA,
+                        'score_b' => $scoreB,
                         'start_at' => $matchItem['startTime'],
                     ])->save();
-                }
-
-                /*
-                 * 2）回合
-                 */
-                foreach ($matchItem['scores'] ?? [] as $sign => $roundItem) {
-                    $roundScoreA = $roundItem['team1'] ?? 0;
-                    $roundScoreB = $roundItem['team2'] ?? 0;
-
-                    if ($gameMatchRound = GameMatchRound::query()->where(['game_id' => $game->id, 'match_id' => $gameMatch->id, 'sign' => $sign])->first()) { // 更新
-                        if ($gameMatchRound->status == GameStatus::END) continue;
-
-                        $gameMatchRound->status = $gameMatch->status;
-                        $gameMatchRound->score_a = $roundScoreA;
-                        $gameMatchRound->score_b = $roundScoreB;
-                        $gameMatchRound->update();
-                    } else { // 新增
-                        $gameMatchRound = new GameMatchRound();
-                        $gameMatchRound->fill([
-                            'game_id' => $game->id,
-                            'match_id' => $gameMatch->id,
-                            'sign' => $sign,
-                            'status' => $gameMatch->status,
-                            'team_a' => $gameMatch->team_a,
-                            'team_b' => $gameMatch->team_b,
-                            'score_a' => $roundScoreA,
-                            'score_b' => $roundScoreB,
-                        ])->save();
-                    }
                 }
             }
         }

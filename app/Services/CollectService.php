@@ -6,8 +6,6 @@ namespace App\Services;
 
 use App\Enums\Channel;
 use App\Enums\GameStatus;
-use App\Jobs\CollectCctv;
-use App\Jobs\CollectLpl;
 use App\Models\Game;
 use Illuminate\Support\Facades\Log;
 

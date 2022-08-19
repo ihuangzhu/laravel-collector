@@ -29,7 +29,7 @@ class GameStatus
             self::END => '已结束',
         ];
 
-        if (empty($key)) return $map;
+        if (is_null($key)) return $map;
         return $map[$key] ?? $def;
     }
 

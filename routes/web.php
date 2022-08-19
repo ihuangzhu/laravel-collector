@@ -1,8 +1,8 @@
 <?php
 
-use App\Http\Controllers\Manage\GameController;
-use App\Http\Controllers\Manage\HomeController;
-use App\Http\Controllers\Manage\LoginController;
+use App\Http\Controllers\Admin\GameController;
+use App\Http\Controllers\Admin\HomeController;
+use App\Http\Controllers\Admin\LoginController;
 use Illuminate\Support\Facades\Route;
 
 /*
@@ -21,7 +21,7 @@ Route::get('/', function () {
 });
 
 // 主后台
-Route::prefix('manage')->group(function () {
+Route::prefix('admin')->group(function () {
     // 登录
     Route::controller(LoginController::class)->group(function () {
         Route::match(['get', 'post'], '/login', 'login');
@@ -38,6 +38,7 @@ Route::prefix('manage')->group(function () {
     Route::controller(GameController::class)->prefix('game')->group(function () {
         Route::get('/', 'index');
         Route::get('/query', 'query');
+        Route::get('/refresh', 'refresh');
         Route::match(['get', 'post'], '/edit', 'edit');
 
     });

@@ -27,7 +27,7 @@ class Channel
             self::CCTV => '央视体育',
         ];
 
-        if (empty($key)) return $map;
+        if (is_null($key)) return $map;
         return $map[$key] ?? $def;
     }
 

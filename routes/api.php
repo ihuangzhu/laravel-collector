@@ -1,5 +1,7 @@
 <?php
 
+use App\Http\Controllers\Api\GameController;
+use App\Http\Controllers\Api\SubscribeController;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Route;
 
@@ -16,4 +18,17 @@ use Illuminate\Support\Facades\Route;
 
 Route::middleware('auth:sanctum')->get('/user', function (Request $request) {
     return $request->user();
+});
+
+Route::controller(GameController::class)->group(function () {
+    Route::get('/game', 'index');
+    Route::get('/game/mode', 'mode');
+    Route::get('/game/matches', 'matches');
+
+});
+
+Route::controller(SubscribeController::class)->group(function () {
+    Route::any('/subscribe', 'index');
+    Route::any('/subscribe/test', 'test');
+
 });
